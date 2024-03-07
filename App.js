@@ -1,4 +1,4 @@
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar, setStatusBarBackgroundColor } from 'expo-status-bar';
 import React, {useState, useEffect} from 'react';
 import { Image, StyleSheet, Text, View, Button, TextInput, Alert, FlatList, TouchableOpacity } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,10 +8,21 @@ import {NavigationContainer} from '@react-navigation/native';
 import {app, database, storage} from './firebase.js'
 import {collection, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import {useCollection} from 'react-firebase-hooks/firestore' //install with npm install
+import uuid from 'react-native-uuid';
 
 import {ref, uploadBytes, getDownloadURL, deleteObject} from 'firebase/storage'
 import * as ImagePicker from 'expo-image-picker'
 //npm install expo-image-picker
+
+// Brug UUID til unikke navne på billeder
+//uuid.v4(); // ⇨ '11edc52b-2918-4d71-9058-f7285e29d894'
+// Brug image array in firebase storage til at gemme flere billeder til en note
+// Når image gemmes, skal navnet gemmes i firestore database.
+
+//TODO
+//Implementer array af billeder alle steder. I deleteNote, hentbillede,
+// uploadbillede, downloadbillede, deleteImage og saveNote og map viewet i detailspage.
+
 
 export default function App() {
   const Stack = createNativeStackNavigator()
@@ -35,7 +46,8 @@ const Home = ({navigation, route}) => { //En komponent
     if (newNote) {
       try {
         const response = await addDoc(collection(database, "notes"), {
-          text: newNote
+          text: newNote,
+          images: []
         })
       } catch (error) {
         console.log("error FB:"+error)
@@ -54,7 +66,7 @@ const Home = ({navigation, route}) => { //En komponent
   };
 
   function goToDetailPage(item){
-    navigation.navigate("Details", {note: item.text, id: item.id})
+    navigation.navigate("Details", {note: item.text, images: item.images, id: item.id})
   }
 
   return (
@@ -86,9 +98,9 @@ const Home = ({navigation, route}) => { //En komponent
 
 const Details = ({navigation, route}) => { //En komponent
   const [editText, setText] = useState(route.params?.note);
-  const id = route.params?.id;
-
-  const [imagePath, setImagePath] = useState(null)
+  const [noteImages, setNoteImages] = useState(route.params?.images)
+  const id = route.params?.id; //Note id in firebase
+  const [imagePath, setImagePath] = useState([])
 
   async function hentBillede(){
     const resultat = await ImagePicker.launchImageLibraryAsync({
@@ -109,15 +121,22 @@ const Details = ({navigation, route}) => { //En komponent
     })
   }
 
-  async function downloadBillede(){
-    try {
-      await getDownloadURL(ref(storage, id))
-    .then((url)=>{
-      setImagePath(url)
-    })
-    } catch (error) {
-      console.log("Image not found for this note")
-    } 
+  async function downloadBillede() {
+    if (noteImages) {
+      const downloadURLs = await Promise.all(noteImages.map(async (image) => {
+        try {
+          const url = await getDownloadURL(ref(storage, image));
+          return url;
+        } catch (error) {
+          console.log("Image not found for this note");
+          return null;
+        }
+      }));
+      // Filter out any null values (in case of errors)
+      const filteredURLs = downloadURLs.filter(url => url !== null);
+      // Update the imagePath array with the downloaded URLs
+      setImagePath(filteredURLs);
+    }
   }
   const deleteImage = () => {
     const imageRef = ref(storage, imagePath)
@@ -127,6 +146,24 @@ const Details = ({navigation, route}) => { //En komponent
       setImagePath(null)
     })
   };
+
+  async function launchCamera(){
+    const result = await ImagePicker.requestCameraPermissionsAsync()
+    if(!result.granted){
+      console.log("Kamera ikke tilladt")
+    } else {
+      ImagePicker.launchCameraAsync({
+        quality: 1 //fra 0.0 til 1.0
+      })
+      .then((response) => {
+        console.log("Billede ankommet " + response)
+        setImagePath(response.assets[0].uri)
+      })
+    }
+  }
+
+
+
   async function saveNote(){
     const editedNote = editText.trim();
     const response = await updateDoc(doc(database, "notes", id), {
@@ -141,13 +178,14 @@ const Details = ({navigation, route}) => { //En komponent
   }
 
   downloadBillede()
+
+  //Map view så ImagePath array gås igennem og alle billeder fra array vises. 
   return (
     <View style={styles.container}>
 
 <View style={styles.imageContainer}>
         <View>
-          
-          <Image source={{ uri: imagePath }}
+          <Image source={{ uri: imagePath[0] }}
             style={styles.noteImage}/>
             <TouchableOpacity style={styles.deleteImageButton} onPress={() => deleteImage()}>
               <MaterialIcons name="delete" size={24} color="red" />
@@ -156,6 +194,7 @@ const Details = ({navigation, route}) => { //En komponent
       </View>
           {/* <Image source={{uri:imagePath}} style={styles.noteImage}/> */}
           <Button title="Add a new image" onPress={hentBillede}/>
+          <Button title="Take picture" onPress={launchCamera}/>
           <Text style={styles.title}>This is the page for details!</Text>
           <Text style={styles.title}>You can edit your note here</Text>
           <Text>{'\n'}</Text>
