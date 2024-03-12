@@ -47,7 +47,6 @@ const Home = ({navigation, route}) => { //En komponent
       try {
         const response = await addDoc(collection(database, "notes"), {
           text: newNote,
-          images: []
         })
       } catch (error) {
         console.log("error FB:"+error)
@@ -66,7 +65,7 @@ const Home = ({navigation, route}) => { //En komponent
   };
 
   function goToDetailPage(item){
-    navigation.navigate("Details", {note: item.text, images: item.images, id: item.id})
+    navigation.navigate("Details", {note: item.text, id: item.id})
   }
 
   return (
@@ -121,22 +120,15 @@ const Details = ({navigation, route}) => { //En komponent
     })
   }
 
-  async function downloadBillede() {
-    if (noteImages) {
-      const downloadURLs = await Promise.all(noteImages.map(async (image) => {
-        try {
-          const url = await getDownloadURL(ref(storage, image));
-          return url;
-        } catch (error) {
-          console.log("Image not found for this note");
-          return null;
-        }
-      }));
-      // Filter out any null values (in case of errors)
-      const filteredURLs = downloadURLs.filter(url => url !== null);
-      // Update the imagePath array with the downloaded URLs
-      setImagePath(filteredURLs);
-    }
+  async function downloadBillede(){
+    try {
+      await getDownloadURL(ref(storage, id))
+    .then((url)=>{
+      setImagePath(url)
+    })
+    } catch (error) {
+      console.log("Image not found for this note")
+    } 
   }
   const deleteImage = () => {
     const imageRef = ref(storage, imagePath)
@@ -185,7 +177,7 @@ const Details = ({navigation, route}) => { //En komponent
 
 <View style={styles.imageContainer}>
         <View>
-          <Image source={{ uri: imagePath[0] }}
+          <Image source={{ uri: imagePath}}
             style={styles.noteImage}/>
             <TouchableOpacity style={styles.deleteImageButton} onPress={() => deleteImage()}>
               <MaterialIcons name="delete" size={24} color="red" />
